@@ -5,7 +5,7 @@ from typing import Any, Dict, List
 
 from prefect import flow, get_run_logger, task
 
-from my_package.extraction.llm_client import GitHubModelsExtractor, get_llm_extractor
+from my_package.extraction.llm_client import OllamaExtractor, get_llm_extractor
 from my_package.extraction.pdf_reader import extract_text_from_pdf, join_pages
 from my_package.postprocessing.rules import postprocess
 
@@ -25,7 +25,7 @@ def extract_pdf_text(path: Path) -> str:
 def run_extraction(text: str, path: Path) -> Dict[str, Any]:
     extractor = get_llm_extractor()
     raw = extractor.extract(text)
-    method = "llm" if isinstance(extractor, GitHubModelsExtractor) else "stub"
+    method = "llm" if isinstance(extractor, OllamaExtractor) else "stub"
     fields = postprocess(raw, method=method)
     return {"filename": path.name, "issuer": path.parent.name, "fields": fields.dict()}
 

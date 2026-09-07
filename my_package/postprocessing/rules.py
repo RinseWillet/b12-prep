@@ -12,9 +12,9 @@ DATE_FORMATS = ["%d %B %Y", "%d.%m.%Y", "%Y-%m-%d", "%d/%m/%Y"]
 CURRENCY_SYMBOLS = {"$": "USD", "\u20ac": "EUR", "\u00a3": "GBP", "\u00a5": "JPY"}
 
 
-def isin_checksum_valid(isin: Optional[str]) -> bool:
+def isin_checksum_valid(isin: Optional[Any]) -> bool:
     """Validate an ISIN's check digit using the ISO 6166 (Luhn-style) algorithm."""
-    if not isin or not ISIN_PATTERN.match(isin):
+    if not isin or not isinstance(isin, str) or not ISIN_PATTERN.match(isin):
         return False
     digits = "".join(_LETTER_VALUES.get(ch, ch) for ch in isin.upper())
     total = 0
@@ -29,8 +29,8 @@ def isin_checksum_valid(isin: Optional[str]) -> bool:
     return total % 10 == 0
 
 
-def normalize_date(raw: Optional[str]) -> Optional[date]:
-    if not raw:
+def normalize_date(raw: Optional[Any]) -> Optional[date]:
+    if not raw or not isinstance(raw, str):
         return None
     raw = raw.strip()
     for fmt in DATE_FORMATS:
@@ -41,8 +41,8 @@ def normalize_date(raw: Optional[str]) -> Optional[date]:
     return None
 
 
-def normalize_currency(raw: Optional[str]) -> Optional[str]:
-    if not raw:
+def normalize_currency(raw: Optional[Any]) -> Optional[str]:
+    if not raw or not isinstance(raw, str):
         return None
     raw = raw.strip()
     if raw in CURRENCY_SYMBOLS:
@@ -51,9 +51,11 @@ def normalize_currency(raw: Optional[str]) -> Optional[str]:
     return upper if CURRENCY_PATTERN.match(upper) else None
 
 
-def normalize_amount(raw: Optional[str]) -> Optional[float]:
-    if not raw:
+def normalize_amount(raw: Optional[Any]) -> Optional[float]:
+    if raw is None or raw == "":
         return None
+    if isinstance(raw, (int, float)):
+        return float(raw)
     cleaned = raw.replace(",", "").replace(" ", "")
     try:
         return float(cleaned)

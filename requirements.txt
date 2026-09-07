@@ -3,6 +3,7 @@ pydantic>=1.10,<2
 prefect==2.2.0
 pandas
 openai
+python-dotenv
 anyio<4
 httpx==0.23.3
 sqlalchemy<2
