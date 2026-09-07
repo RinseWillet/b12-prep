@@ -41,9 +41,11 @@ def write_result(result: Dict[str, Any], output_dir: str) -> Path:
 @flow(name="prospectus-extraction")
 def prospectus_extraction_flow(source_dir: str, output_dir: str) -> List[Path]:
     logger = get_run_logger()
+    # Discover all PDF files in the source directory.
     pdf_paths = discover_pdfs(source_dir)
     logger.info(f"Discovered {len(pdf_paths)} PDFs under {source_dir}")
 
+    # Extract text from each PDF and run the extraction pipeline.
     output_paths: List[Path] = []
     for path in pdf_paths:
         text = extract_pdf_text(path)

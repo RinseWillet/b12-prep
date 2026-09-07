@@ -6,7 +6,7 @@ import pandas as pd
 
 from my_package.postprocessing.rules import isin_checksum_valid
 
-
+# Build and write diagnostics reports for extracted prospectus data.
 def build_diagnostics_report(results_dir: str) -> pd.DataFrame:
     rows = []
     for json_path in sorted(Path(results_dir).glob("*.json")):

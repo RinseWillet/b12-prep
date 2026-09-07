@@ -35,3 +35,42 @@ Investors:
 Wat EuroClear volgens mij vooral doet is de hele effectenhandel in o.a. EuroBonds, dus data en het veilig opslaan van effecten voor investeerders is een belangrijke taak, maar ook de hulp bij de settlement (d.w.z. het overbrengen van geld van investeerder naar issuer) - bij elke verhandeling van een Eurobond na issueing, moet weer een settlement worden gedaan - dus data en data security is heel belangrijk!
 
 ISIN - International Securities Identification Number - this number identifies a specific financial security (een effect)
+
+Okay, what have I just vibe coded:
+
+I build a small system that uses an LLM, combined with prefect and pydantic to parse mainly prospectus and other files in pdf and extract from each one:
+
+    isin, issuer_name, currency, aggregate_nominal_amount, coupon_rate, maturity_date, issue_date, governing_law, listing, document_type
+
+The LLM used now is a locally installed model (Ollama) - the reason being to not burn tokens without reason (a LLM stub only gets you so far during development)
+
+Functionality:
+1) __main__.py parses the --source-dir and --output-dir values for the location of the pdfs
+2) Then calls prospectus_extraction_flow(source_dir=..., output_dir=...)
+3) In prospectus_extraction_flow, a Prefect orchestration layer is used for the pdf extraction pipeline
+This layer: a) discovers the pdfs, b) extracts the texts per file c) runs the run_extraction which makes an LLM extraction (Ollama - local) or regex extraction if no model is available (fallback) d) does postprocessing using rules.py (in postprocessing) - this normalizes dates into Python date objects, currency codes, strips comma's from nominal amounts, it checks the ISIN number with the ISO 6166 definition, attaches confidence values and extraction method metadata e) then returns everything back to the prospectus_extraction_flow, which writes away a json file with all the extracted info and a filename based on the original filename. f) optionally, a diagnostics can be run to check all the extracted files and summarize the fields that have been extracted and the confidence levels
+
+HOW TO run this little program:
+
+In the terminal in the project run:
+
+source .venv/bin/activate
+
+This activates the virtual environment in which Prefect and Pydantic and others are installed. Then run:
+
+python -m my_package --source-dir "prospect documents/barclays" --output-dir extraction_output
+
+or
+
+python -m my_package --source-dir "prospect documents/bnp-paribas" --output-dir extraction_output/bnp-paribas-ollama
+
+if you want to be more specific where you want the extracted files to be located and the name even includes the llm type. This runs the extraction pipeline, and you end up with a bunch of json files.
+
+Then (optionally) you can run the diagnostics:
+
+python -c "
+from my_package.reporting.diagnostics import write_diagnostics_csv
+write_diagnostics_csv('extraction_output/bnp-paribas-ollama', 'extraction_output/diagnostics_bnp-pariba-ollama.csv')
+"
+
+This loops over all the jsons and provides a summary in .csv on the the extracted fields, whether the ISIN checksum was okay, and the confidence levels per extracted field. 

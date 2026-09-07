@@ -39,7 +39,7 @@ class Developer:
 
 
 def start_coding() -> None:
-    print("Start coding in Python today!")
+    print("Get ready to extract some data!")
 
 
 def date() -> datetime:
@@ -50,7 +50,7 @@ def date() -> datetime:
 def main() -> None:
     start_coding()
     print(date())
-    dev = Developer("Alice", "Python")
+    dev = Developer("Rinse", "Python")
     print(dev.get_info())
 
 

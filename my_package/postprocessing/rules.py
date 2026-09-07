@@ -12,6 +12,7 @@ DATE_FORMATS = ["%d %B %Y", "%d.%m.%Y", "%Y-%m-%d", "%d/%m/%Y"]
 CURRENCY_SYMBOLS = {"$": "USD", "\u20ac": "EUR", "\u00a3": "GBP", "\u00a5": "JPY"}
 
 
+# Validate an ISIN's check digit using the ISO 6166 (Luhn-style) algorithm (see also https://en.wikipedia.org/wiki/International_Securities_Identification_Number#Check-digit  )
 def isin_checksum_valid(isin: Optional[Any]) -> bool:
     """Validate an ISIN's check digit using the ISO 6166 (Luhn-style) algorithm."""
     if not isin or not isinstance(isin, str) or not ISIN_PATTERN.match(isin):
@@ -28,7 +29,7 @@ def isin_checksum_valid(isin: Optional[Any]) -> bool:
         total += n
     return total % 10 == 0
 
-
+# Normalize a date string into a datetime.date object. Returns None if parsing fails.
 def normalize_date(raw: Optional[Any]) -> Optional[date]:
     if not raw or not isinstance(raw, str):
         return None
@@ -40,7 +41,7 @@ def normalize_date(raw: Optional[Any]) -> Optional[date]:
             continue
     return None
 
-
+# Normalize a currency string into a 3-letter ISO currency code. Returns None if parsing fails.
 def normalize_currency(raw: Optional[Any]) -> Optional[str]:
     if not raw or not isinstance(raw, str):
         return None
@@ -51,6 +52,7 @@ def normalize_currency(raw: Optional[Any]) -> Optional[str]:
     return upper if CURRENCY_PATTERN.match(upper) else None
 
 
+# Normalize a numeric amount string into a float. Returns None if parsing fails.
 def normalize_amount(raw: Optional[Any]) -> Optional[float]:
     if raw is None or raw == "":
         return None
@@ -62,7 +64,7 @@ def normalize_amount(raw: Optional[Any]) -> Optional[float]:
     except ValueError:
         return None
 
-
+# Postprocess a raw extraction dictionary into a ProspectusFields object, normalizing and validating fields.
 def postprocess(raw: Dict[str, Any], method: str = "stub") -> ProspectusFields:
     """Normalize, validate, and attach confidence/sentinel metadata to a raw extraction dict."""
 
