@@ -1,8 +1,9 @@
 from datetime import datetime
+from typing import List
 
 
 class Developer:
-    valid_languages: list[str] = [
+    valid_languages: List[str] = [
         "Python",
         "Java",
         "JavaScript",
@@ -54,3 +55,19 @@ def main() -> None:
 
 
 main()
+
+
+def run_extraction_cli() -> None:
+    import argparse
+
+    from my_package.flows.extraction_flow import prospectus_extraction_flow
+
+    parser = argparse.ArgumentParser(description="Run the prospectus extraction flow.")
+    parser.add_argument("--source-dir", default="prospect documents")
+    parser.add_argument("--output-dir", default="extraction_output")
+    args = parser.parse_args()
+    prospectus_extraction_flow(source_dir=args.source_dir, output_dir=args.output_dir)
+
+
+if __name__ == "__main__":
+    run_extraction_cli()

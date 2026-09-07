@@ -46,7 +46,8 @@ Action items:
 - [ ] Confirm GitHub Copilot Chat works
 - [ ] Confirm Python extension is installed
 - [ ] Confirm Pylance is installed
-- [ ] Create/use a Python 3.8.20 environment
+- [x] Create/use a Python 3.8.20 environment
+- [x] Create/use a project `.venv` based on Python 3.8.20
 - [ ] Understand Python 3.8 syntax limitations
 - [ ] Avoid Python 3.10+ syntax in production-style code
 - [ ] Practice asking Copilot to explain code
@@ -56,6 +57,8 @@ Action items:
 
 Important Python 3.8 compatibility notes:
 
+- Project Python is managed with `pyenv local 3.8.20`
+- Activate the project environment with `source .venv/bin/activate` before running pytest, Prefect, or dependency checks
 - Use `Optional[str]` instead of `str | None`
 - Use `List[str]` instead of `list[str]`
 - Avoid `match/case`
@@ -69,7 +72,14 @@ Interview sentence:
 
 ## Point 3 — Pydantic and Prefect
 
-Status: Not started
+Status: In progress
+
+Setup confirmed:
+
+- Pydantic 1.10.26 installed in `.venv`
+- Prefect 2.2.0 installed in `.venv`
+- pytest installed in `.venv`
+- Running `python` or `prefect` outside `.venv` may not find these packages
 
 Action items:
 
