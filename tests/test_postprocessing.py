@@ -36,6 +36,12 @@ def test_normalize_currency_maps_symbol_and_code():
     assert normalize_currency("not-a-currency") is None
 
 
+def test_normalize_currency_maps_rmb_alias():
+    assert normalize_currency("RMB") == "CNY"
+    assert normalize_currency("Renminbi") == "CNY"
+    assert normalize_currency("\u5143") == "CNY"
+
+
 def test_normalize_amount_strips_separators():
     assert normalize_amount("750,000,000") == 750000000.0
     assert normalize_amount(None) is None
@@ -91,3 +97,25 @@ def test_postprocess_normalizes_new_reference_data_fields():
     assert fields.interest_payment_frequency.value == "annual"
     assert fields.issue_price.value == 99.75
     assert fields.seniority.value == "Senior"
+
+
+def test_postprocess_grounding_drops_identifiers_absent_from_source():
+    raw = {
+        "isin": "XS0876756452",
+        "issuer_lei": "U4LOSYZ7YG4W3S5F2G91",
+        "common_code": "123456789",
+    }
+    source = "ISIN Code: XS0876756452 and Common Code 123456789 for this security."
+    fields = postprocess(raw, source_text=source)
+    # ISIN and common code appear in the source; LEI does not -> dropped as hallucinated.
+    assert fields.isin.value == "XS0876756452"
+    assert fields.common_code.value == "123456789"
+    assert fields.issuer_lei.value is None
+    assert fields.issuer_lei.confidence == 0.0
+
+
+def test_postprocess_without_source_text_keeps_identifiers():
+    raw = {"issuer_lei": "U4LOSYZ7YG4W3S5F2G91"}
+    fields = postprocess(raw)
+    assert fields.issuer_lei.value == "U4LOSYZ7YG4W3S5F2G91"
+

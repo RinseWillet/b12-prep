@@ -38,7 +38,7 @@ ISIN - International Securities Identification Number - this number identifies a
 
 Okay, what have I just vibe coded:
 
-I build a small system that uses an LLM, combined with prefect and pydantic to parse mainly prospectus and other files in pdf and extract from each one:
+I build a small proof of concept system that uses an LLM, combined with prefect and pydantic to parse mainly prospectus and other files in pdf and extract from each one:
 
     isin, issuer_name, currency, aggregate_nominal_amount, coupon_rate, maturity_date, issue_date, governing_law, listing, document_type
 
@@ -55,6 +55,10 @@ This layer:
 3d) does postprocessing using rules.py (in postprocessing) - this normalizes dates into Python date objects, currency codes, strips comma's from nominal amounts, it checks the ISIN number with the ISO 6166 definition, attaches confidence values and extraction method metadata The postprocess phase or, more specifically, in the rules.py, is actually where ProspectusFields and ExtractedField are imported from prospectus.py and this file defines the dataschema used as result in the extraction-flow.
 3e) then returns everything back to the prospectus_extraction_flow, which writes away a json file with all the extracted info and a filename based on the original filename. 
 4) optionally, a diagnostics can be run to check all the extracted files and summarize the fields that have been extracted and the confidence levels
+
+This setup uses the OpenAI SDK so this code is compatible with the use of OpenAI api's as well.
+
+
 
 HOW TO run this little program:
 
@@ -223,3 +227,21 @@ Benchmark quality:
 
   Trade-off: 8b is ~2.5x the size (4.9 GB) and slower per document than 3b.
 
+
+## Benchmark harness — models, timing, prompts (2026-09)
+
+Model line-up (add via `run_benchmark(models=[...])` or `OLLAMA_MODEL`):
+- stub (regex baseline), llama3.2:3b, llama3.1:8b, qwen2.5:7b-instruct, qwen3:14b.
+- Pull first: `ollama pull qwen2.5:7b-instruct` and `ollama pull qwen3:14b`.
+- qwen3 emits `<think>` reasoning; OllamaExtractor appends `/no_think` and strips think tags so JSON stays clean.
+
+Gold set: benchmark/gold.json now has 10 docs, every entry labels the full 20-field set
+(null where absent). New docs' values still need SME verification — see GOLD_TODO.md.
+
+Timing: benchmark detail CSV has a per-document `seconds` column; summary has
+`avg_seconds_per_doc` so accuracy can be weighed against cost.
+
+Prompt A/B: OllamaExtractor prompt is selectable via `prompt_variant` arg or
+`OLLAMA_PROMPT_VARIANT` env ("v1" baseline, "v2" adds per-field hints + one worked
+example). Benchmark v1 vs v2 before switching the default. Fine-tuning weights was
+rejected — prompt engineering + a larger gold set is the higher-ROI, explainable path.

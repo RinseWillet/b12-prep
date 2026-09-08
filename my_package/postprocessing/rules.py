@@ -11,7 +11,9 @@ COMMON_CODE_PATTERN = re.compile(r"^\d{9}$")
 LEI_PATTERN = re.compile(r"^[A-Z0-9]{20}$")
 _LETTER_VALUES = {chr(ord("A") + i): str(10 + i) for i in range(26)}
 DATE_FORMATS = ["%d %B %Y", "%d.%m.%Y", "%Y-%m-%d", "%d/%m/%Y"]
-CURRENCY_SYMBOLS = {"$": "USD", "\u20ac": "EUR", "\u00a3": "GBP", "\u00a5": "JPY"}
+CURRENCY_SYMBOLS = {"$": "USD", "\u20ac": "EUR", "\u00a3": "GBP", "\u00a5": "JPY", "\u5143": "CNY"}
+# Textual currency aliases that are not valid ISO 4217 codes (e.g. "RMB" -> "CNY").
+CURRENCY_ALIASES = {"RMB": "CNY", "RENMINBI": "CNY"}
 COUPON_TYPE_MAP = {"fixed rate": "fixed", "floating rate": "floating", "zero coupon": "zero"}
 FREQUENCY_MAP = {
     "annually": "annual",
@@ -58,6 +60,8 @@ def normalize_currency(raw: Optional[Any]) -> Optional[str]:
     if raw in CURRENCY_SYMBOLS:
         return CURRENCY_SYMBOLS[raw]
     upper = raw.upper()
+    if upper in CURRENCY_ALIASES:
+        return CURRENCY_ALIASES[upper]
     return upper if CURRENCY_PATTERN.match(upper) else None
 
 
@@ -95,14 +99,28 @@ def _as_text(raw: Optional[Any]) -> Optional[str]:
         return ", ".join(str(x) for x in raw)
     return str(raw)
 
+
+# Anti-hallucination guard: an identifier the model returns must appear verbatim in the
+# source. With no source_text we cannot check, so the value is left untouched.
+def _grounded(token: Optional[Any], source_text: Optional[str]) -> bool:
+    if not token or not source_text:
+        return True
+    return str(token).strip().upper() in source_text.upper()
+
 # Postprocess a raw extraction dictionary into a ProspectusFields object, normalizing and validating fields.
-def postprocess(raw: Dict[str, Any], method: str = "stub") -> ProspectusFields:
-    """Normalize, validate, and attach confidence/sentinel metadata to a raw extraction dict."""
+def postprocess(raw: Dict[str, Any], method: str = "stub", source_text: Optional[str] = None) -> ProspectusFields:
+    """Normalize, validate, and attach confidence/sentinel metadata to a raw extraction dict.
+
+    When source_text is given, identifier fields (isin, issuer_lei, common_code) that do
+    not appear verbatim in the source are dropped as hallucinations.
+    """
 
     def field(value: Any, confidence: float) -> ExtractedField:
         return ExtractedField(value=value, confidence=confidence, extraction_method=method)
 
     isin_value = raw.get("isin")
+    if not _grounded(isin_value, source_text):
+        isin_value = None
     isin_confidence = 0.9 if isin_checksum_valid(isin_value) else (0.3 if isin_value else 0.0)
 
     currency_value = normalize_currency(raw.get("currency"))
@@ -112,11 +130,15 @@ def postprocess(raw: Dict[str, Any], method: str = "stub") -> ProspectusFields:
     issue_value = normalize_date(raw.get("issue_date"))
 
     common_code_value = raw.get("common_code")
+    if not _grounded(common_code_value, source_text):
+        common_code_value = None
     common_code_confidence = (
         0.9 if common_code_value and COMMON_CODE_PATTERN.match(str(common_code_value))
         else (0.3 if common_code_value else 0.0)
     )
     lei_value = raw.get("issuer_lei")
+    if not _grounded(lei_value, source_text):
+        lei_value = None
     lei_confidence = (
         0.9 if lei_value and LEI_PATTERN.match(str(lei_value))
         else (0.3 if lei_value else 0.0)

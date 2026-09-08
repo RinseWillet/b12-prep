@@ -26,7 +26,7 @@ def run_extraction(text: str, path: Path) -> Dict[str, Any]:
     extractor = get_llm_extractor()
     raw = extractor.extract(text)
     method = "llm" if isinstance(extractor, OllamaExtractor) else "stub"
-    fields = postprocess(raw, method=method)
+    fields = postprocess(raw, method=method, source_text=text)
     return {"filename": path.name, "issuer": path.parent.name, "fields": fields.dict()}
 
 
@@ -47,8 +47,15 @@ def prospectus_extraction_flow(source_dir: str, output_dir: str) -> List[Path]:
 
     # Extract text from each PDF and run the extraction pipeline.
     output_paths: List[Path] = []
+    failures: List[str] = []
     for path in pdf_paths:
-        text = extract_pdf_text(path)
-        result = run_extraction(text, path)
-        output_paths.append(write_result(result, output_dir))
+        # Isolate each document so one PDF's failure (e.g. an LLM timeout) doesn't abort the batch.
+        try:
+            text = extract_pdf_text(path)
+            result = run_extraction(text, path)
+            output_paths.append(write_result(result, output_dir))
+        except Exception as exc:
+            failures.append(path.name)
+            logger.warning(f"Extraction failed for {path.name}: {exc}")
+    logger.info(f"Completed {len(output_paths)}/{len(pdf_paths)} PDFs; {len(failures)} failed")
     return output_paths

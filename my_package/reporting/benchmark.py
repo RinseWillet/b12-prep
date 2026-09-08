@@ -6,6 +6,7 @@ source PDFs. Comparison is exact-match; a case-insensitive mode can be layered o
 later to quantify near-misses.
 """
 import json
+import time
 from pathlib import Path
 from typing import Any, Dict, Iterable, Optional, Tuple
 
@@ -96,7 +97,10 @@ def run_benchmark(gold_path: str, output_csv: str, base_dir: Optional[str] = Non
     for rel_path, expected_fields in gold.items():
         text = join_pages(extract_text_from_pdf(root / rel_path))
         for extractor_name, extractor in extractors.items():
-            fields = postprocess(extractor.extract(text), method=extractor_name)
+            start = time.perf_counter()
+            raw = extractor.extract(text)
+            elapsed = round(time.perf_counter() - start, 3)
+            fields = postprocess(raw, method=extractor_name, source_text=text)
             for field_name, expected in expected_fields.items():
                 actual = getattr(fields, field_name).value
                 rows.append(
@@ -107,6 +111,7 @@ def run_benchmark(gold_path: str, output_csv: str, base_dir: Optional[str] = Non
                         "expected": expected,
                         "actual": actual,
                         "outcome": _classify(expected, actual, mode),
+                        "seconds": elapsed,
                     }
                 )
 
@@ -123,11 +128,17 @@ def run_benchmark(gold_path: str, output_csv: str, base_dir: Optional[str] = Non
 
 def _summarize(detail: pd.DataFrame) -> pd.DataFrame:
     if detail.empty:
-        return pd.DataFrame(columns=["extractor", "matches", "total", "accuracy"])
+        return pd.DataFrame(
+            columns=["extractor", "matches", "total", "accuracy", "avg_seconds_per_doc"]
+        )
     grouped = detail.groupby("extractor")
     summary = grouped["outcome"].agg(
         matches=lambda s: (s == "match").sum(),
         total="count",
     ).reset_index()
     summary["accuracy"] = (summary["matches"] / summary["total"]).round(3)
+    # seconds is doc-level (repeated across a doc's field rows), so dedupe before averaging.
+    per_doc = detail.drop_duplicates(subset=["extractor", "pdf"])
+    avg_seconds = per_doc.groupby("extractor")["seconds"].mean().round(3)
+    summary["avg_seconds_per_doc"] = summary["extractor"].map(avg_seconds)
     return summary

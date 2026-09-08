@@ -31,3 +31,16 @@ def test_run_benchmark_scores_stub_and_writes_csv(tmp_path):
     assert stub_row.total > 0
     assert 0.0 <= stub_row.accuracy <= 1.0
     assert set(detail["outcome"]).issubset({"match", "missing", "mismatch", "spurious"})
+    assert "seconds" in detail.columns
+    assert "avg_seconds_per_doc" in summary.columns
+    assert stub_row.avg_seconds_per_doc >= 0.0
+
+
+def test_gold_entries_all_share_the_full_field_set():
+    import json
+    from pathlib import Path
+
+    gold = json.loads(Path(REPO_ROOT_GOLD).read_text())
+    field_sets = [frozenset(fields) for fields in gold.values()]
+    assert len(set(field_sets)) == 1, "every gold entry must label the same fields"
+    assert len(gold) == 10

@@ -104,16 +104,32 @@ class OllamaExtractor(LLMExtractor):
 
     ENDPOINT = "http://localhost:11434/v1"
     MODEL = "llama3.2:3b"
+    PROMPT_VARIANT = "v1"
+    REQUEST_TIMEOUT = 180.0
     CHUNK_CHARS = 12000
     CHUNK_OVERLAP = 500
     MAX_CHUNKS = 6
 
-    def __init__(self, base_url: Optional[str] = None, model: Optional[str] = None) -> None:
+    def __init__(
+        self,
+        base_url: Optional[str] = None,
+        model: Optional[str] = None,
+        prompt_variant: Optional[str] = None,
+    ) -> None:
         from openai import OpenAI
 
         self._base_url = base_url or os.environ.get("OLLAMA_ENDPOINT", self.ENDPOINT)
         self._model = model or os.environ.get("OLLAMA_MODEL", self.MODEL)
-        self._client = OpenAI(base_url=self._base_url, api_key="ollama")
+        self._prompt_variant = prompt_variant or os.environ.get(
+            "OLLAMA_PROMPT_VARIANT", self.PROMPT_VARIANT
+        )
+        # Bounded timeout + no retries so a stuck document fails fast instead of hanging the batch.
+        self._client = OpenAI(
+            base_url=self._base_url,
+            api_key="ollama",
+            timeout=self.REQUEST_TIMEOUT,
+            max_retries=0,
+        )
 
     def extract(self, text: str) -> Dict[str, Any]:
         merged: Dict[str, Any] = {name: None for name in FIELD_PATTERNS}
@@ -130,10 +146,15 @@ class OllamaExtractor(LLMExtractor):
 
     def _extract_chunk(self, chunk: str) -> Dict[str, Any]:
         prompt = self._build_prompt(chunk)
+        system_prompt = self._system_prompt()
+        # Qwen3 emits <think> reasoning by default, which corrupts strict JSON output;
+        # /no_think switches it off via Ollama's chat template.
+        if "qwen3" in self._model.lower():
+            system_prompt += "\n/no_think"
         response = self._client.chat.completions.create(
             model=self._model,
             messages=[
-                {"role": "system", "content": self._SYSTEM_PROMPT},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": prompt},
             ],
             temperature=0,
@@ -154,6 +175,41 @@ class OllamaExtractor(LLMExtractor):
         "- Use null for any field that is not present. Do not guess."
     )
 
+    # v2 adds per-field hints for the fields that miss most, plus one compact worked
+    # example; benchmark it against v1 before making it the default.
+    _SYSTEM_PROMPT_V2 = (
+        "You extract structured reference data from Eurobond Final Terms / Pricing "
+        "Supplements. Return only a flat JSON object, no commentary. Follow these rules "
+        "strictly:\n"
+        "- isin: the ISIN of THIS security (labelled 'ISIN Code'). Never return the "
+        "ISIN of an underlying, reference or related instrument.\n"
+        "- document_type: exactly 'Final Terms' or 'Pricing Supplement'.\n"
+        "- coupon_type: exactly 'fixed', 'floating' or 'zero' (a 'Fixed Rate Note' is "
+        "'fixed'; a 'Zero Coupon Note' is 'zero').\n"
+        "- interest_payment_frequency: one of 'annual', 'semi-annual', 'quarterly', "
+        "'monthly'. Map 'payable annually' -> 'annual', 'per annum' -> 'annual', 'semi-annually' -> 'semi-annual'.\n"
+        "- seniority: 'Senior' or 'Subordinated', taken from the 'Status of the Notes'.\n"
+        "- common_code: the 9-digit Common Code only, digits with no spaces.\n"
+        "- aggregate_nominal_amount, coupon_rate, issue_price: plain numbers only, no "
+        "thousands separators, currency symbols or '%' (e.g. '99.653 per cent.' -> "
+        "99.653; 'GBP 750,000,000' -> 750000000).\n"
+        "- currency: the 3-letter ISO code (e.g. 'EUR').\n"
+        "- maturity_date, issue_date: ISO format YYYY-MM-DD.\n"
+        "- issuer_lei: the 20-character LEI of the issuer.\n"
+        "- Use null for any field that is not present. Do not guess.\n"
+        "Example (illustrative, values abbreviated):\n"
+        "Input: '... ISIN Code: XS1234567890 ... Issuer: Example Bank plc ... 4.5 per "
+        "cent. ... interest payable semi-annually ... Status of the Notes: Senior ...'\n"
+        'Output: {"isin": "XS1234567890", "issuer_name": "Example Bank plc", '
+        '"coupon_rate": 4.5, "coupon_type": "fixed", "interest_payment_frequency": '
+        '"semi-annual", "seniority": "Senior"}'
+    )
+
+    def _system_prompt(self) -> str:
+        if self._prompt_variant == "v2":
+            return self._SYSTEM_PROMPT_V2
+        return self._SYSTEM_PROMPT
+
     def _build_prompt(self, text: str) -> str:
         fields = ", ".join(FIELD_PATTERNS.keys())
         return (
@@ -163,6 +219,9 @@ class OllamaExtractor(LLMExtractor):
 
     def _parse_response(self, response: Any) -> Dict[str, Any]:
         content = response.choices[0].message.content
+        if content:
+            # Strip any <think>...</think> block a reasoning model may still emit.
+            content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
         try:
             return json.loads(content)
         except (json.JSONDecodeError, TypeError):
