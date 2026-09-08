@@ -10,6 +10,7 @@ venv.bak/
 # Local prospectus documents
 prospect documents/
 extraction_output/
+KST/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

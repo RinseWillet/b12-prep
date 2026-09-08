@@ -4,7 +4,7 @@ import logging
 import os
 import re
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
 
@@ -25,7 +25,54 @@ FIELD_PATTERNS: Dict[str, str] = {
     "governing_law": r"Governing Law[:\s]+([^\n]+)",
     "listing": r"\(i\)\s*Listing:\s*([^\n]+)",
     "document_type": r"(Final Terms|Pricing Supplement)",
+    "common_code": r"Common Code[:\s]+(\d{9})",
+    "clearing_systems": r"Clearing System[^\n:]*:\s*([^\n]+)",
+    "specified_denomination": r"Specified Denomination[s]?[^\n:]*:\s*([^\n]+)",
+    "form_of_notes": r"Form of the Notes[^\n:]*:\s*([^\n]+)",
+    "coupon_type": r"(Fixed Rate|Floating Rate|Zero Coupon)\s+Note",
+    "interest_payment_frequency": r"(semi-annually|annually|quarterly|monthly)",
+    "issue_price": r"Issue Price[:\s]+([\d.]+)\s*(?:per cent\.?|%)",
+    "seniority": r"Status of the Notes[^\n:]*:\s*([^\n]+)",
+    "issuer_lei": r"Legal Entity Identifier(?:\s*\(LEI\))?[:\s]+([A-Z0-9]{20})",
+    "guarantor_name": r"\bGuarantor:\s*([^\n]+)",
 }
+
+_ISIN_BODY = r"[A-Z]{2}[A-Z0-9]{9}[0-9]"
+ISIN_CODE_PATTERN = re.compile(r"ISIN\s*Code[:\s]+(" + _ISIN_BODY + r")", re.IGNORECASE)
+ISIN_GENERIC_PATTERN = re.compile(r"ISIN[:\s]+(" + _ISIN_BODY + r")", re.IGNORECASE)
+
+
+# Prefer the issue's own labelled "ISIN Code"; underlying/reference ISINs often appear
+# as "(ISIN: DE...)" earlier, so take the last match to favour the operational section.
+def extract_isin(text: str) -> Optional[str]:
+    code_matches = ISIN_CODE_PATTERN.findall(text)
+    if code_matches:
+        return code_matches[-1].upper()
+    generic_matches = ISIN_GENERIC_PATTERN.findall(text)
+    return generic_matches[-1].upper() if generic_matches else None
+
+
+# The strongly-labelled "ISIN Code" match only, used to deterministically override an
+# LLM that may otherwise return an underlying/reference ISIN.
+def extract_labelled_isin(text: str) -> Optional[str]:
+    code_matches = ISIN_CODE_PATTERN.findall(text)
+    return code_matches[-1].upper() if code_matches else None
+
+
+# Split text into overlapping windows so no field is lost across a boundary. Capped so a
+# very long document (e.g. a whole book) stays bounded instead of firing hundreds of calls.
+def chunk_text(text: str, size: int, overlap: int, max_chunks: int) -> List[str]:
+    if not text:
+        return []
+    if len(text) <= size:
+        return [text]
+    chunks: List[str] = []
+    step = max(1, size - overlap)
+    start = 0
+    while start < len(text) and len(chunks) < max_chunks:
+        chunks.append(text[start:start + size])
+        start += step
+    return chunks
 
 
 class LLMExtractor(ABC):
@@ -40,6 +87,9 @@ class StubLLMExtractor(LLMExtractor):
     def extract(self, text: str) -> Dict[str, Any]:
         result: Dict[str, Any] = {}
         for field_name, pattern in FIELD_PATTERNS.items():
+            if field_name == "isin":
+                result[field_name] = extract_isin(text)
+                continue
             match = re.search(pattern, text, re.IGNORECASE)
             result[field_name] = match.group(1).strip() if match else None
         return result
@@ -54,7 +104,9 @@ class OllamaExtractor(LLMExtractor):
 
     ENDPOINT = "http://localhost:11434/v1"
     MODEL = "llama3.2:3b"
-    MAX_CHARS = 12000
+    CHUNK_CHARS = 12000
+    CHUNK_OVERLAP = 500
+    MAX_CHUNKS = 6
 
     def __init__(self, base_url: Optional[str] = None, model: Optional[str] = None) -> None:
         from openai import OpenAI
@@ -64,20 +116,49 @@ class OllamaExtractor(LLMExtractor):
         self._client = OpenAI(base_url=self._base_url, api_key="ollama")
 
     def extract(self, text: str) -> Dict[str, Any]:
-        prompt = self._build_prompt(text)
+        merged: Dict[str, Any] = {name: None for name in FIELD_PATTERNS}
+        for chunk in chunk_text(text, self.CHUNK_CHARS, self.CHUNK_OVERLAP, self.MAX_CHUNKS):
+            raw = self._extract_chunk(chunk)
+            for key in FIELD_PATTERNS:
+                if merged[key] is None and raw.get(key) is not None:
+                    merged[key] = raw.get(key)
+        # Hybrid override: a strongly-labelled "ISIN Code" is authoritative over the LLM.
+        labelled_isin = extract_labelled_isin(text)
+        if labelled_isin:
+            merged["isin"] = labelled_isin
+        return merged
+
+    def _extract_chunk(self, chunk: str) -> Dict[str, Any]:
+        prompt = self._build_prompt(chunk)
         response = self._client.chat.completions.create(
             model=self._model,
-            messages=[{"role": "user", "content": prompt}],
+            messages=[
+                {"role": "system", "content": self._SYSTEM_PROMPT},
+                {"role": "user", "content": prompt},
+            ],
             temperature=0,
+            response_format={"type": "json_object"},
         )
         return self._parse_response(response)
+
+    _SYSTEM_PROMPT = (
+        "You extract structured reference data from Eurobond Final Terms / Pricing "
+        "Supplements. Return only a flat JSON object. Follow these rules strictly:\n"
+        "- isin: the ISIN of THIS security (labelled 'ISIN Code'). Never return the "
+        "ISIN of an underlying, reference or related instrument.\n"
+        "- document_type: exactly 'Final Terms' or 'Pricing Supplement'.\n"
+        "- coupon_type: exactly 'fixed', 'floating' or 'zero'.\n"
+        "- aggregate_nominal_amount, coupon_rate, issue_price: plain numbers only, "
+        "no thousands separators, currency symbols or '%'.\n"
+        "- issuer_lei: the 20-character LEI of the issuer.\n"
+        "- Use null for any field that is not present. Do not guess."
+    )
 
     def _build_prompt(self, text: str) -> str:
         fields = ", ".join(FIELD_PATTERNS.keys())
         return (
-            "Extract the following fields from this Eurobond prospectus excerpt as a "
-            f"flat JSON object with keys: {fields}. Use null for any field not present. "
-            "Return JSON only, no commentary.\n\n" + text[: self.MAX_CHARS]
+            "Extract these fields as a flat JSON object with keys: "
+            f"{fields}. Return JSON only, no commentary.\n\n" + text
         )
 
     def _parse_response(self, response: Any) -> Dict[str, Any]:

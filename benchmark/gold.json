@@ -1,0 +1,43 @@
+{
+  "prospect documents/barclays/XS0876756452__final-terms__6b7fde4dae.pdf": {
+    "isin": "XS0876756452",
+    "issuer_name": "Standard Chartered PLC",
+    "currency": "GBP",
+    "aggregate_nominal_amount": 750000000,
+    "coupon_rate": 4.375,
+    "maturity_date": "2038-01-18",
+    "issue_date": "2013-01-17",
+    "document_type": "Final Terms",
+    "common_code": "087675645",
+    "issue_price": 99.653,
+    "seniority": "Senior",
+    "coupon_type": "fixed",
+    "interest_payment_frequency": "semi-annual",
+    "guarantor_name": null
+  },
+  "prospect documents/bnp-paribas/XS2955926998__final-terms__7643a8ae77.pdf": {
+    "isin": "XS2955926998",
+    "issuer_name": "BNP Paribas Issuance B.V.",
+    "issuer_lei": "7245009UXRIGIRYOBR48",
+    "guarantor_name": "BNP Paribas",
+    "issue_date": "2025-02-25",
+    "governing_law": "English law",
+    "clearing_systems": "Euroclear and Clearstream, Luxembourg",
+    "form_of_notes": "Clearing System Global Security",
+    "document_type": "Final Terms",
+    "coupon_rate": null,
+    "coupon_type": null
+  },
+  "prospect documents/hsbc/XS2904540775.pdf": {
+    "isin": "XS2904540775",
+    "issuer_name": "HSBC Holdings plc",
+    "issuer_lei": "MLU0ZO3ML4LN2LL2TL39",
+    "currency": "EUR",
+    "aggregate_nominal_amount": 1500000000,
+    "coupon_rate": 3.445,
+    "issue_date": "2024-09-25",
+    "maturity_date": "2030-09-25",
+    "document_type": "Final Terms",
+    "guarantor_name": null
+  }
+}

@@ -3,8 +3,10 @@ from datetime import date
 from my_package.postprocessing.rules import (
     isin_checksum_valid,
     normalize_amount,
+    normalize_coupon_type,
     normalize_currency,
     normalize_date,
+    normalize_frequency,
     postprocess,
 )
 
@@ -39,6 +41,19 @@ def test_normalize_amount_strips_separators():
     assert normalize_amount(None) is None
 
 
+def test_normalize_coupon_type_maps_known_phrases():
+    assert normalize_coupon_type("Fixed Rate") == "fixed"
+    assert normalize_coupon_type("floating rate") == "floating"
+    assert normalize_coupon_type("Zero Coupon") == "zero"
+    assert normalize_coupon_type("variable") is None
+
+
+def test_normalize_frequency_maps_known_phrases():
+    assert normalize_frequency("annually") == "annual"
+    assert normalize_frequency("Semi-Annually") == "semi-annual"
+    assert normalize_frequency("never") is None
+
+
 def test_postprocess_produces_valid_prospectus_fields():
     raw = {
         "isin": "XS0876756452",
@@ -58,3 +73,21 @@ def test_postprocess_produces_valid_prospectus_fields():
     assert fields.maturity_date.value == date(2038, 1, 18)
     assert fields.governing_law.value is None
     assert fields.governing_law.confidence == 0.0
+
+
+def test_postprocess_normalizes_new_reference_data_fields():
+    raw = {
+        "common_code": "123456789",
+        "issuer_lei": "U4LOSYZ7YG4W3S5F2G91",
+        "coupon_type": "Fixed Rate",
+        "interest_payment_frequency": "annually",
+        "issue_price": "99.75",
+        "seniority": "Senior",
+    }
+    fields = postprocess(raw)
+    assert fields.common_code.value == "123456789"
+    assert fields.common_code.confidence > 0.5
+    assert fields.coupon_type.value == "fixed"
+    assert fields.interest_payment_frequency.value == "annual"
+    assert fields.issue_price.value == 99.75
+    assert fields.seniority.value == "Senior"
